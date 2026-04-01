@@ -7,6 +7,7 @@ A conversation-first travel assistant built with Streamlit, LangGraph, and free 
 | Document | Purpose |
 |----------|---------|
 | **README.md** (this file) | Setup, run, features, architecture overview, and ideas for next steps. |
+| **[PROMPT_NOTES.md](PROMPT_NOTES.md)** | Brief rationale for **prompt engineering** choices (CoT, concision, tools vs. knowledge, weather, honesty). |
 | **[spec.md](spec.md)** | Detailed implementation spec for builders and coding agents (architecture, env vars, module contracts, verification). |
 
 Optional environment variables are listed in **`.env.example`**.
@@ -24,7 +25,7 @@ This maps typical travel-assistant coursework criteria to **where they are imple
 | **Error handling; confused / empty / hallucination-related recovery** | **Tools** (`tools/*.py`): failures return **clear error strings** for the model to acknowledge. **Prompt** (*Honesty*): do not invent live weather, visas, or prices; point to official sources when unsure. **UI** (`app.py`): strips **leaked tool JSON** from streamed text; **empty-reply fallback** if the model returns nothing usable; **primary → fallback model** on **connection errors** or **429 / rate limits**. **Metrics** flag sanitization and empty fallback (see *Input and output evaluation*). |
 | **Context management (history)** | **`st.session_state.messages`** holds the full transcript as **`HumanMessage` / `AIMessage`**. Only the last **`MAX_LLM_CONTEXT_MESSAGES`** turns are sent to the model (sliding window); full thread remains visible in the UI. **Prompt** (*Voice*): tie-ins to prior turns (“For London with kids…”). Details in **`spec.md`** (Streamlit application, session state). |
 | **Evaluation focus — coherent, helpful chat** | ReAct + CoT + concision rules + follow-up tie-ins; try the **Example prompts** and multi-turn follow-ups. |
-| **Evaluation focus — prompt engineering quality** | Single structured **`SYSTEM_PROMPT`** with distinct blocks (voice, length, CoT, rules, data, honesty); documented here and in **`spec.md`** section on system prompt. |
+| **Evaluation focus — prompt engineering quality** | Single structured **`SYSTEM_PROMPT`** with distinct blocks (voice, length, CoT, rules, data, honesty). Design rationale: **`PROMPT_NOTES.md`**; contract: **`spec.md`** (system prompt section). |
 | **Evaluation focus — edge cases / LLM limits** | Long input capped (**`MAX_USER_INPUT_CHARS`**); long history windowed; tool errors as strings; Wikipedia disambiguation in **`tools/attractions.py`**; telemetry for stripped JSON and empty fallback. |
 | **Evaluation focus — blending data + model** | Composite **`get_destination_snapshot`** (parallel weather + country + attractions) plus instructions to **synthesize** tool output into natural markdown for the user. |
 

@@ -31,7 +31,7 @@ Course briefs often require: **CoT prompting**, **concise responses**, **blendin
 | Errors / confusion / hallucinations | Tool error strings; honesty rules; `app.py` sanitization + empty fallback + model fallback. |
 | Conversation context | `st.session_state.messages` + `MAX_LLM_CONTEXT_MESSAGES`; prompt follow-up tie-ins. |
 
-The **README** section *Course rubric alignment* expands this table for human reviewers.
+The **README** section *Course rubric alignment* and **`PROMPT_NOTES.md`** expand this for human reviewers.
 
 ---
 
@@ -41,6 +41,7 @@ The **README** section *Course rubric alignment* expands this table for human re
 modern-travel-assistant/
 ├── pyproject.toml          # dependencies; requires-python >= 3.12
 ├── README.md               # human setup, features, env notes
+├── PROMPT_NOTES.md         # brief rationale for SYSTEM_PROMPT design (reviewers)
 ├── .env.example            # template; no real secrets
 ├── spec.md                 # this file
 ├── app.py                  # Streamlit UI, streaming, guards, metrics, fallback orchestration
