@@ -1,6 +1,6 @@
 # Brief notes on key prompt engineering decisions
 
-This file is for **reviewers**: it explains *why* the system prompt is shaped the way it is. The implementation lives in **`agent/prompts.py`** (`SYSTEM_PROMPT`). The assignment focus here is **effective LLM conversations**, not backend complexity.
+This file is for **reviewers**: it explains *why* the system prompt is shaped the way it is. The implementation lives in **`agent/prompts.py`** (`SYSTEM_PROMPT`). The focus here is **effective LLM conversations**, not backend complexity.
 
 ---
 
