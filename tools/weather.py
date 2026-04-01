@@ -1,56 +1,64 @@
-import requests
+import httpx
 from langchain_core.tools import tool
 
 
 @tool
-def get_weather(city: str) -> str:
-    """Get current weather and 3-day forecast for a city."""
+async def get_weather(city: str) -> str:
+    """
+    Get current weather for a specific city or town the user named (or that was explicitly
+    established in the conversation). Do not call with a guessed or default city when the user
+    did not specify a place — answer by asking which city they mean instead.
+    Args:
+        city: Real place name only (e.g. "London", "Kyoto", "Austin").
+    """
+    if not city or not city.strip():
+        return "Please provide a city name."
+    city = city.strip()
+
     try:
-        geo_resp = requests.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "en", "format": "json"},
-            timeout=5,
-        )
-        geo_resp.raise_for_status()
-        results = geo_resp.json().get("results")
-        if not results:
-            return f"Could not find location: '{city}'. Please check the city name and try again."
-
-        lat = results[0]["latitude"]
-        lon = results[0]["longitude"]
-        name = results[0].get("name", city)
-        country = results[0].get("country", "")
-
-        wx_resp = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "current_weather": True,
-                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum",
-                "timezone": "auto",
-                "forecast_days": 3,
-            },
-            timeout=5,
-        )
-        wx_resp.raise_for_status()
-        data = wx_resp.json()
-
-        current = data["current_weather"]
-        daily = data["daily"]
-
-        lines = [f"Weather in {name}, {country}:"]
-        lines.append(f"Now: {current['temperature']}°C, wind {current['windspeed']} km/h")
-        lines.append("3-day forecast:")
-        for i in range(3):
-            lines.append(
-                f"  {daily['time'][i]}: "
-                f"{daily['temperature_2m_min'][i]}–{daily['temperature_2m_max'][i]}°C, "
-                f"rain {daily['precipitation_sum'][i]}mm"
+        timeout = httpx.Timeout(12.0, connect=5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            geo_response = await client.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={
+                    "name": city,
+                    "count": 1,
+                    "language": "en",
+                    "format": "json",
+                },
             )
-        return "\n".join(lines)
+            geo_response.raise_for_status()
+            geo_data = geo_response.json()
 
-    except requests.exceptions.Timeout:
-        return f"Weather service timed out for '{city}'. Please try again."
+            if not geo_data.get("results"):
+                return f"Could not find location coordinates for {city}."
+
+            location = geo_data["results"][0]
+            lat = location["latitude"]
+            lon = location["longitude"]
+            country = location.get("country", "")
+            display_name = location.get("name", city)
+
+            weather_response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+                    "timezone": "auto",
+                },
+            )
+            weather_response.raise_for_status()
+            weather_data = weather_response.json()
+
+            current = weather_data.get("current", {})
+            temp = current.get("temperature_2m", "Unknown")
+            humidity = current.get("relative_humidity_2m", "Unknown")
+            wind = current.get("wind_speed_10m", "Unknown")
+
+            return (
+                f"Current weather in {display_name} ({country}): "
+                f"Temperature: {temp}°C, Humidity: {humidity}%, Wind Speed: {wind} km/h."
+            )
     except Exception as e:
-        return f"Weather data unavailable for '{city}'. ({type(e).__name__}: {e})"
+        return f"Error fetching weather for {city}: {str(e)}"

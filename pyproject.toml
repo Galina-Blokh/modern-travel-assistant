@@ -1,19 +1,17 @@
 [project]
 name = "modern-travel-assistant"
 version = "0.1.0"
-description = "Agentic travel assistant powered by LangChain and DeepSeek/Ollama"
+description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit>=1.35.0",
-    "langchain>=0.2.0",
-    "langchain-community>=0.2.0",
-    "langchain-openai>=0.1.8",
-    "openai>=1.30.0",
-    "requests>=2.31.0",
-    "python-dotenv>=1.0.0",
-    "nest-asyncio>=1.6.0",
+    "httpx>=0.28.1",
+    "langchain>=1.2.14",
+    "langchain-community>=0.4.1",
+    "langchain-groq>=1.1.2",
+    "langchain-openai>=1.1.12",
+    "langgraph>=1.1.0",
+    "python-dotenv>=1.2.2",
+    "streamlit>=1.56.0",
+    "wikipedia>=1.4.0",
 ]
-
-[tool.uv]
-python = "3.12"

@@ -1,53 +1,67 @@
-import requests
+from urllib.parse import quote
+
+import httpx
 from langchain_core.tools import tool
 
 
 @tool
-def get_country_info(country: str) -> str:
-    """Get country information including capital, currency, language, and region."""
+async def get_country_info(country: str) -> str:
+    """
+    Get facts, currency, population, and language for a country.
+    Args:
+        country: The name of the country (e.g. "France", "Japan").
+    Use this when a user needs country facts.
+    """
+    if not country or not country.strip():
+        return "Please provide a country name."
+    country = country.strip()
+    encoded = quote(country, safe="")
+
     try:
-        resp = requests.get(
-            f"https://restcountries.com/v3.1/name/{country}",
-            params={"fields": "name,capital,currencies,languages,region,subregion,idd"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            return f"No information found for country: '{country}'."
+        async with httpx.AsyncClient() as client:
+            url = f"https://restcountries.com/v3.1/name/{encoded}"
+            response = await client.get(url)
 
-        c = data[0]
-        name = c["name"]["common"]
-        capital = ", ".join(c.get("capital", ["N/A"]))
-        region = c.get("region", "N/A")
-        subregion = c.get("subregion", "")
+            if response.status_code == 404:
+                return f"Could not find information for country: {country}."
 
-        currencies = ", ".join(
-            f"{v['name']} ({v.get('symbol', '')})"
-            for v in c.get("currencies", {}).values()
-        )
-        languages = ", ".join(c.get("languages", {}).values())
+            response.raise_for_status()
+            data = response.json()
 
-        idd = c.get("idd", {})
-        root = idd.get("root", "")
-        suffixes = idd.get("suffixes", [""])
-        calling_code = f"{root}{suffixes[0]}" if root else "N/A"
+            if not data:
+                return f"No data returned for country: {country}."
 
-        return (
-            f"{name}:\n"
-            f"  Capital: {capital}\n"
-            f"  Region: {region}{' / ' + subregion if subregion else ''}\n"
-            f"  Currency: {currencies}\n"
-            f"  Languages: {languages}\n"
-            f"  Calling code: {calling_code}\n"
-            f"  Visa note: Check your government's travel advisory for current visa requirements."
-        )
+            country_data = data[0]
 
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            return f"Country '{country}' not found. Please check the spelling."
-        return f"Country information unavailable for '{country}'. ({e})"
-    except requests.exceptions.Timeout:
-        return f"Country service timed out for '{country}'. Please try again."
+            name = country_data.get("name", {}).get("common", country)
+            capital = ", ".join(country_data.get("capital", ["Unknown"]))
+            population = country_data.get("population", "Unknown")
+            if isinstance(population, bool):
+                pop_str = str(population)
+            elif isinstance(population, (int, float)):
+                pop_str = f"{int(round(population)):,}"
+            else:
+                pop_str = str(population)
+
+            currencies = []
+            for curr_code, curr_info in country_data.get("currencies", {}).items():
+                currencies.append(f"{curr_info.get('name', '')} ({curr_info.get('symbol', '')})")
+            currency_str = ", ".join(currencies) if currencies else "Unknown"
+
+            languages = list(country_data.get("languages", {}).values())
+            language_str = ", ".join(languages) if languages else "Unknown"
+
+            region = country_data.get("region", "Unknown")
+            subregion = country_data.get("subregion", "Unknown")
+
+            return (
+                f"Country: {name}\n"
+                f"Capital: {capital}\n"
+                f"Region: {region} ({subregion})\n"
+                f"Population: {pop_str}\n"
+                f"Languages: {language_str}\n"
+                f"Currency: {currency_str}"
+            )
+
     except Exception as e:
-        return f"Country information unavailable for '{country}'. ({type(e).__name__}: {e})"
+        return f"Error fetching information for {country}: {str(e)}"

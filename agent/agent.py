@@ -1,131 +1,88 @@
 import os
+
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_openai_tools_agent, AgentExecutor
-from langchain_core.callbacks import BaseCallbackHandler
-from agent.memory import ConversationHistory
-from agent.prompts import build_prompt
-from tools.weather import get_weather
-from tools.country import get_country_info
-from tools.attractions import get_attractions
-from utils.error_handler import add_hallucination_disclaimer
+from langchain_groq import ChatGroq
+from langgraph.prebuilt import create_react_agent
 
-TOOLS = [get_weather, get_country_info, get_attractions]
+load_dotenv()
 
-_MAX_INPUT = 800  # chars — keep prompts within context budget
+# Caps reply length for concise UX; override in .env, e.g. MAX_OUTPUT_TOKENS=1200
+_MAX_OUT = int(os.getenv("MAX_OUTPUT_TOKENS", "768"))
+
+from tools import (
+    get_weather,
+    get_country_info,
+    get_attractions,
+    get_destination_snapshot,
+)
+from .prompts import SYSTEM_PROMPT
 
 
-def _validate(text: str) -> str | None:
-    """Return an error string if the input should be rejected, else None."""
-    text = text.strip()
-    if not text:
-        return "Please type a message."
-    if len(text) > _MAX_INPUT:
-        return (
-            f"Your message is {len(text)} characters — please shorten it to "
-            f"under {_MAX_INPUT} characters so I can respond accurately."
+def _build_model(config_prefix: str):
+    base_url = os.getenv(f"{config_prefix}_API_BASE")
+    api_key = os.getenv(f"{config_prefix}_API_KEY")
+    model_name = os.getenv(f"{config_prefix}_MODEL")
+
+    if not base_url:
+        if config_prefix == "PRIMARY":
+            base_url = os.getenv("OPENAI_API_BASE") or os.getenv("OLLAMA_BASE_URL")
+            if base_url:
+                model_name = model_name or os.getenv("OPENAI_MODEL_NAME", "llama3.1:8b")
+                api_key = api_key or os.getenv("OPENAI_API_KEY", "not-needed-for-local")
+            else:
+                model_name = model_name or os.getenv("OPENAI_MODEL_NAME", "llama-3.3-70b-versatile")
+                api_key = api_key or os.getenv("OPENAI_API_KEY")
+        else:
+            return None
+
+    if not model_name:
+        raise ValueError(f"Missing {config_prefix}_MODEL configuration.")
+
+    if not api_key and "localhost" not in base_url and "127.0.0.1" not in base_url:
+        raise ValueError(f"Missing {config_prefix}_API_KEY configuration.")
+
+    # Use native Groq client if connecting to Groq for proper tool calling support
+    if "groq.com" in base_url:
+        return ChatGroq(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.0,
+            max_tokens=_MAX_OUT,
+            max_retries=2,
         )
-    return None
 
-
-MODEL_OPTIONS = {
-    "deepseek-chat (API)": "deepseek",
-    "deepseek-r1:7b (Ollama, free)": "deepseek-r1",
-    "llama3 (Ollama, free)": "ollama",
-}
-
-
-class _StreamHandler(BaseCallbackHandler):
-    """Streams LLM tokens into a Streamlit placeholder in real-time."""
-
-    def __init__(self, container):
-        self.container = container
-        self.text = ""
-
-    def on_llm_new_token(self, token: str, **kwargs) -> None:
-        self.text += token
-        self.container.markdown(self.text + "▌")
-
-
-def _get_llm(model: str, streaming: bool = False, callbacks: list | None = None) -> ChatOpenAI:
-    kwargs = dict(temperature=0.7, streaming=streaming, callbacks=callbacks or [])
-    if model == "deepseek":
-        return ChatOpenAI(
-            model="deepseek-chat",
-            api_key=os.getenv("DEEPSEEK_API_KEY"),
-            base_url="https://api.deepseek.com/v1",
-            **kwargs,
-        )
-    if model == "deepseek-r1":
-        return ChatOpenAI(
-            model="deepseek-r1:7b",
-            api_key="ollama",
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-            **kwargs,
-        )
     return ChatOpenAI(
-        model="llama3",
-        api_key="ollama",
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-        **kwargs,
+        model=model_name,
+        api_key=api_key or "not-needed-for-local",
+        base_url=base_url,
+        temperature=0.0,
+        max_tokens=_MAX_OUT,
+        max_retries=2,
     )
 
 
-class TravelAgent:
-    """Conversational travel agent with tool calling, streaming, and persistent memory."""
+def create_agent(use_fallback: bool = False):
+    """
+    Initializes the agent using LangGraph's prebuilt react agent.
+    This handles the parallel tool calling and CoT logic internally.
+    """
+    
+    llm = _build_model("FALLBACK" if use_fallback else "PRIMARY")
+    if llm is None:
+        raise ValueError("Fallback model is not configured.")
 
-    def __init__(self, model: str = "deepseek"):
-        self.model = model
-        self.memory = ConversationHistory()
-
-    def run(self, user_input: str, stream_container=None) -> tuple[str, list]:
-        """
-        Run one turn of the conversation.
-
-        Args:
-            user_input: The user's message.
-            stream_container: Optional st.empty() placeholder for token streaming.
-
-        Returns:
-            (response_text, intermediate_steps)
-        """
-        user_input = user_input.strip()
-        validation_error = _validate(user_input)
-        if validation_error:
-            return validation_error, []
-
-        callbacks = [_StreamHandler(stream_container)] if stream_container is not None else []
-        llm = _get_llm(self.model, streaming=stream_container is not None, callbacks=callbacks)
-
-        prompt = build_prompt(user_input)
-        agent = create_openai_tools_agent(llm=llm, tools=TOOLS, prompt=prompt)
-        executor = AgentExecutor(
-            agent=agent,
-            tools=TOOLS,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=3,
-            return_intermediate_steps=True,
-        )
-
-        try:
-            result = executor.invoke({
-                "input": user_input,
-                "chat_history": self.memory.get(),
-            })
-        except Exception as exc:
-            err = (
-                f"I ran into a technical problem and couldn't complete that request. "
-                f"({type(exc).__name__}: {exc}) — please try again or rephrase your question."
-            )
-            return err, []
-
-        response = result["output"]
-        steps = result.get("intermediate_steps", [])
-
-        self.memory.add_user(user_input)
-        self.memory.add_assistant(response)
-
-        return add_hallucination_disclaimer(response), steps
-
-    def reset(self) -> None:
-        self.memory.clear()
+    tools = [
+        get_destination_snapshot,
+        get_weather,
+        get_country_info,
+        get_attractions,
+    ]
+    
+    agent = create_react_agent(
+        model=llm,
+        tools=tools,
+        prompt=SYSTEM_PROMPT
+    )
+    
+    return agent
