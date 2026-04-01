@@ -1,4 +1,4 @@
-# Modern Travel Assistant
+# AI Travel Assistant
 
 A conversation-first travel assistant built with Streamlit, LangGraph, and free LLM providers.
 
@@ -230,3 +230,9 @@ These are **not** implemented today; they are sensible next steps if you extend 
 - **Ollama path:** Document or script **model pull** (`ollama pull …`) for new machines; optional health check before first chat.
 
 For a concise list of **intentional non-goals** as implemented, see **spec.md** (section 11).
+
+
+
+https://github.com/user-attachments/assets/e4bd951b-42e6-41fd-9eda-771eb10f72e6
+
+
